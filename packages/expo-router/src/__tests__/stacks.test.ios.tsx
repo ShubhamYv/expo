@@ -1501,4 +1501,73 @@ describe('unstable_requiredScreensBelow', () => {
       routes: [{ state: { routes: [{ name: 'index', key: 'index:0-1' }, { name: 'details' }] } }],
     });
   });
+
+  describe('screenListeners', () => {
+    it('calls screenListeners removed and blur when a screen is popped', async () => {
+      const events: string[] = [];
+
+      function Layout() {
+        return (
+          <Stack
+            screenListeners={({ route }) => ({
+              blur: () => events.push(`blur ${route.name}`),
+              removed: () => events.push(`removed ${route.name}`),
+            })}
+          />
+        );
+      }
+
+      await renderRouter(
+        {
+          _layout: Layout,
+          index: () => null,
+          detail: () => null,
+        },
+        { initialUrl: '/' }
+      );
+
+      await act(() => router.push('/detail'));
+      expect(events).toEqual(['blur index']);
+
+      events.length = 0;
+
+      await act(() => router.back());
+      expect(events).toEqual(expect.arrayContaining(['blur detail', 'removed detail']));
+    });
+
+    it('provides route and navigation to screenListeners for popped screens', async () => {
+      let capturedRoute: any = null;
+      let capturedNav: any = null;
+
+      function LayoutWithProps() {
+        return (
+          <Stack
+            screenListeners={({ route, navigation }) => ({
+              removed: () => {
+                capturedRoute = route;
+                capturedNav = navigation;
+              },
+            })}
+          />
+        );
+      }
+
+      await renderRouter(
+        {
+          _layout: LayoutWithProps,
+          index: () => null,
+          detail: () => null,
+        },
+        { initialUrl: '/' }
+      );
+
+      await act(() => router.push('/detail'));
+      await act(() => router.back());
+
+      expect(capturedRoute).not.toBeNull();
+      expect(capturedRoute.name).toBe('detail');
+      expect(capturedNav).not.toBeNull();
+      expect(typeof capturedNav.navigate).toBe('function');
+    });
+  });
 });

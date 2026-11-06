@@ -31,6 +31,7 @@ import { Screen } from './Screen';
 import { isArrayEqual } from './isArrayEqual';
 import {
   type DefaultNavigatorOptions,
+  type Descriptor,
   type DescriptorRouteProp,
   type EventMapBase,
   type EventMapCore,
@@ -356,6 +357,13 @@ export function useNavigationBuilder<
       ? declaredState
       : { ...declaredState, routeNames };
   }, [committedState, routeNamesKey, router]);
+  const routesByKeyRef = React.useRef(new Map<string, Route<string>>());
+  const descriptorsByKeyRef = React.useRef(new Map<string, Descriptor<ScreenOptions>>());
+
+  for (const route of state.routes) {
+    routesByKeyRef.current.set(route.key, route);
+  }
+
   const reduce = useLatestCallback<RouterRegistryEntry['reduce']>((registryState, action) =>
     // The registry stores states from different router types; this entry only receives its own state key.
     router.getStateForAction(registryState as State, action, {
@@ -370,7 +378,9 @@ export function useNavigationBuilder<
     let isPlaceholder = false;
 
     if (e.target) {
-      route = state.routes.find((route) => route.key === e.target);
+      route =
+        state.routes.find((route) => route.key === e.target) ??
+        routesByKeyRef.current.get(e.target);
       const config = screens[e.target];
 
       if (!route && config) {
@@ -392,7 +402,9 @@ export function useNavigationBuilder<
 
     const descriptor = isPlaceholder
       ? describe({ ...route, key: undefined } as DescriptorRouteProp<ParamListBase, string>)
-      : descriptors[route.key]!;
+      : (descriptors[route.key] ??
+        descriptorsByKeyRef.current.get(route.key) ??
+        describe({ ...route, key: undefined } as DescriptorRouteProp<ParamListBase, string>));
     const navigation = descriptor.navigation;
 
     const listeners = ([] as (((e: any) => void) | undefined)[])
@@ -401,8 +413,8 @@ export function useNavigationBuilder<
         ...[
           screenListeners,
           ...routeNames.map((name) => {
-            const { listeners } = screens[name]!.props;
-            return listeners;
+            const screen = screens[name];
+            return screen?.props.listeners;
           }),
         ].map((listeners) => {
           const map =
@@ -422,6 +434,11 @@ export function useNavigationBuilder<
       .filter((cb, i, self) => cb && self.lastIndexOf(cb) === i);
 
     listeners.forEach((listener) => listener?.(e));
+
+    if (e.type === 'removed' && e.target) {
+      routesByKeyRef.current.delete(e.target);
+      descriptorsByKeyRef.current.delete(e.target);
+    }
   });
 
   useFocusEvents({ state, emitter });
@@ -515,6 +532,11 @@ export function useNavigationBuilder<
     emitter,
     routeNode,
   });
+
+  for (const key in descriptors) {
+    descriptorsByKeyRef.current.set(key, descriptors[key]);
+  }
+
   useCurrentRender({
     state,
     descriptors,
